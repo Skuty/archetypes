@@ -121,7 +121,8 @@ public class PricingFacade {
     }
 
     public SimpleComponent createSimpleComponent(String componentName, String calculatorName) {
-        return createSimpleComponent(componentName, calculatorName, Map.of());
+        return createSimpleComponent(componentName, calculatorName, Map.of(),
+                ApplicabilityConstraint.alwaysTrue(), Validity.from(now(clock)));
     }
 
     public SimpleComponent createSimpleComponent(
@@ -130,7 +131,7 @@ public class PricingFacade {
             Map<String, String> parameterMappings
     ) {
         return createSimpleComponent(componentName, calculatorName, parameterMappings,
-                Validity.from(now(clock))); // default: valid from now forever
+                ApplicabilityConstraint.alwaysTrue(), Validity.from(now(clock)));
     }
 
     public SimpleComponent createSimpleComponent(
@@ -139,20 +140,49 @@ public class PricingFacade {
             Map<String, String> parameterMappings,
             Validity validity
     ) {
+        return createSimpleComponent(componentName, calculatorName, parameterMappings,
+                ApplicabilityConstraint.alwaysTrue(), validity);
+    }
+
+    public SimpleComponent createSimpleComponent(
+            String componentName,
+            String calculatorName,
+            ApplicabilityConstraint applicabilityConstraint
+    ) {
+        return createSimpleComponent(componentName, calculatorName, Map.of(),
+                applicabilityConstraint, Validity.from(now(clock)));
+    }
+
+    public SimpleComponent createSimpleComponent(
+            String componentName,
+            String calculatorName,
+            Map<String, String> parameterMappings,
+            ApplicabilityConstraint applicabilityConstraint
+    ) {
+        return createSimpleComponent(componentName, calculatorName, parameterMappings,
+                applicabilityConstraint, Validity.from(now(clock)));
+    }
+
+    public SimpleComponent createSimpleComponent(
+            String componentName,
+            String calculatorName,
+            Map<String, String> parameterMappings,
+            ApplicabilityConstraint applicabilityConstraint,
+            Validity validity
+    ) {
         Calculator calculator = calculatorRepository
                 .findByName(calculatorName)
                 .orElseThrow(() -> new IllegalArgumentException("Calculator '%s' not found".formatted(calculatorName)));
 
-        // Sprawdź czy komponent już istnieje
         return componentRepository.findByName(componentName)
                 .map(existing -> {
-                    // Istnieje - dodaj nową wersję
                     if (!(existing instanceof SimpleComponent simpleComponent)) {
                         throw new IllegalArgumentException("Component '%s' exists but is not a SimpleComponent".formatted(componentName));
                     }
                     SimpleComponentVersion newVersion = new SimpleComponentVersion(
                             calculator,
                             parameterMappings,
+                            applicabilityConstraint,
                             validity,
                             now(clock)
                     );
@@ -161,11 +191,11 @@ public class PricingFacade {
                     return updated;
                 })
                 .orElseGet(() -> {
-                    // Nie istnieje - utwórz nowy
                     SimpleComponent component = SimpleComponent.withInitialVersion(
                             componentName,
                             calculator,
                             parameterMappings,
+                            applicabilityConstraint,
                             validity,
                             clock
                     );
@@ -186,13 +216,33 @@ public class PricingFacade {
             String... childComponentNames
     ) {
         return createCompositeComponent(compositeName, dependencies,
-                Validity.from(now(clock)), // default: valid from now forever
-                childComponentNames);
+                ApplicabilityConstraint.alwaysTrue(), Validity.from(now(clock)), childComponentNames);
     }
 
     public CompositeComponent createCompositeComponent(
             String compositeName,
             Map<String, Map<String, ParameterValue>> dependencies,
+            Validity validity,
+            String... childComponentNames
+    ) {
+        return createCompositeComponent(compositeName, dependencies,
+                ApplicabilityConstraint.alwaysTrue(), validity, childComponentNames);
+    }
+
+    public CompositeComponent createCompositeComponent(
+            String compositeName,
+            Map<String, Map<String, ParameterValue>> dependencies,
+            ApplicabilityConstraint applicabilityConstraint,
+            String... childComponentNames
+    ) {
+        return createCompositeComponent(compositeName, dependencies,
+                applicabilityConstraint, Validity.from(now(clock)), childComponentNames);
+    }
+
+    public CompositeComponent createCompositeComponent(
+            String compositeName,
+            Map<String, Map<String, ParameterValue>> dependencies,
+            ApplicabilityConstraint applicabilityConstraint,
             Validity validity,
             String... childComponentNames
     ) {
@@ -228,6 +278,7 @@ public class PricingFacade {
                     CompositeComponentVersion newVersion = new CompositeComponentVersion(
                             children,
                             idBasedDeps,
+                            applicabilityConstraint,
                             validity,
                             now(clock)
                     );
@@ -241,6 +292,7 @@ public class PricingFacade {
                             compositeName,
                             children,
                             idBasedDeps,
+                            applicabilityConstraint,
                             validity,
                             clock
                     );

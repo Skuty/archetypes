@@ -156,6 +156,7 @@ class InMemoryComponentRepository implements ComponentRepository {
         return new CompositeComponentVersion(
                 freshChildren,
                 version.dependencies(),
+                version.applicabilityConstraint(),
                 version.validity(),
                 version.definedAt()
         );

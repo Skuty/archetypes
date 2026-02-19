@@ -6,33 +6,88 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Version of a SimpleComponent - represents calculator configuration valid during a time period.
- *
- * Contains:
- * - Calculator: the pricing formula (fixed, step function, composite, etc.)
- * - Parameter mappings: how to transform component parameters to calculator parameters
- * - Validity: time period when this version is active
- * - DefinedAt: when this version was created (for tiebreaking)
+ * Version of a SimpleComponent — represents calculator configuration valid during a time period
+ * and applicable under specific business conditions.
+ * <p>
+ * Three orthogonal axes of a pricing component version:
+ * <ul>
+ *   <li><b>Calculator</b> — how do we calculate? (the math)</li>
+ *   <li><b>Validity</b>   — when does it apply? (time)</li>
+ *   <li><b>Applicability</b> — for whom / under what conditions? (business rules)</li>
+ * </ul>
+ * <p>
+ * A version fires if and only if BOTH conditions hold:
+ * <pre>
+ *   validity.isValidAt(context.timestamp())
+ *       &amp;&amp; applicabilityConstraint.isSatisfiedBy(context)
+ * </pre>
  *
  * Example:
- * - Version 1: Fixed 100 PLN, valid from 2024-01-01 forever
- * - Version 2: Fixed 80 PLN (discount), valid from 2024-02-01 to 2024-03-01
- * - After 2024-03-01: automatically reverts to Version 1
+ * <pre>
+ *   new SimpleComponentVersion(
+ *       fixedPerMinute,
+ *       Map.of(),
+ *       and(greaterThan("minutes", 10), equalsTo("customerType", "B2C")),
+ *       Validity.from(LocalDateTime.of(2024, 5, 1, 0, 0)),
+ *       now(clock)
+ *   )
+ * </pre>
+ * Interpretation: "From May, charge per minute — but only for B2C customers
+ * and only when the session exceeds 10 minutes."
  */
 record SimpleComponentVersion(
-    Calculator calculator,
-    Map<String, String> parameterMappings,
-    Validity validity,
-    LocalDateTime definedAt
+        Calculator calculator,
+        Map<String, String> parameterMappings,
+        ApplicabilityConstraint applicabilityConstraint,
+        Validity validity,
+        LocalDateTime definedAt
 ) implements ComponentVersion {
 
     public SimpleComponentVersion {
         parameterMappings = Map.copyOf(parameterMappings);
         Objects.requireNonNull(definedAt, "definedAt cannot be null");
+        Objects.requireNonNull(applicabilityConstraint, "applicabilityConstraint cannot be null");
     }
 
     /**
-     * Create version with clock - definedAt will be set to now(clock).
+     * Backward-compatible constructor — component always applicable (no business condition).
+     */
+    public SimpleComponentVersion(
+            Calculator calculator,
+            Map<String, String> parameterMappings,
+            Validity validity,
+            LocalDateTime definedAt
+    ) {
+        this(calculator, parameterMappings, ApplicabilityConstraint.alwaysTrue(), validity, definedAt);
+    }
+
+    /**
+     * Returns true when this version should be used for the given pricing context.
+     * Combines the time dimension (validity) with the business dimension (applicability).
+     */
+    public boolean isApplicableFor(PricingContext context) {
+        return validity.isValidAt(context.timestamp())
+                && applicabilityConstraint.isSatisfiedBy(context);
+    }
+
+    // ---- factory helpers ----
+
+    /**
+     * Create a version with explicit applicability constraint.
+     */
+    public static SimpleComponentVersion of(
+            Calculator calculator,
+            Map<String, String> parameterMappings,
+            ApplicabilityConstraint applicabilityConstraint,
+            Validity validity,
+            Clock clock
+    ) {
+        return new SimpleComponentVersion(
+                calculator, parameterMappings, applicabilityConstraint, validity, LocalDateTime.now(clock));
+    }
+
+    /**
+     * Create a version that always applies (no business condition).
      */
     public static SimpleComponentVersion of(
             Calculator calculator,
@@ -40,13 +95,15 @@ record SimpleComponentVersion(
             Validity validity,
             Clock clock
     ) {
-        return new SimpleComponentVersion(calculator, parameterMappings, validity, LocalDateTime.now(clock));
+        return new SimpleComponentVersion(
+                calculator, parameterMappings, ApplicabilityConstraint.alwaysTrue(), validity, LocalDateTime.now(clock));
     }
 
     /**
-     * Create version without parameter mappings (direct pass-through).
+     * Create a version without parameter mappings that always applies.
      */
     public static SimpleComponentVersion of(Calculator calculator, Validity validity, Clock clock) {
-        return new SimpleComponentVersion(calculator, Map.of(), validity, LocalDateTime.now(clock));
+        return new SimpleComponentVersion(
+                calculator, Map.of(), ApplicabilityConstraint.alwaysTrue(), validity, LocalDateTime.now(clock));
     }
 }

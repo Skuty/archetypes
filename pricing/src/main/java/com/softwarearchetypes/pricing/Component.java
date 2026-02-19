@@ -1,5 +1,6 @@
 package com.softwarearchetypes.pricing;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -108,18 +109,20 @@ record SimpleComponent(
     }
 
     /**
-     * Factory: Create SimpleComponent with initial version.
+     * Factory: Create SimpleComponent with initial version and applicability constraint.
      */
     public static SimpleComponent withInitialVersion(
             String name,
             Calculator calculator,
             Map<String, String> parameterMappings,
+            ApplicabilityConstraint applicabilityConstraint,
             Validity validity,
             Clock clock
     ) {
         SimpleComponentVersion initialVersion = new SimpleComponentVersion(
                 calculator,
                 parameterMappings,
+                applicabilityConstraint,
                 validity,
                 LocalDateTime.now(clock)
         );
@@ -131,7 +134,21 @@ record SimpleComponent(
     }
 
     /**
-     * Factory: Create SimpleComponent with initial version (no parameter mappings).
+     * Factory: Create SimpleComponent with initial version (always applicable).
+     */
+    public static SimpleComponent withInitialVersion(
+            String name,
+            Calculator calculator,
+            Map<String, String> parameterMappings,
+            Validity validity,
+            Clock clock
+    ) {
+        return withInitialVersion(name, calculator, parameterMappings,
+                ApplicabilityConstraint.alwaysTrue(), validity, clock);
+    }
+
+    /**
+     * Factory: Create SimpleComponent with initial version (no parameter mappings, always applicable).
      */
     public static SimpleComponent withInitialVersion(
             String name,
@@ -139,7 +156,8 @@ record SimpleComponent(
             Validity validity,
             Clock clock
     ) {
-        return withInitialVersion(name, calculator, Map.of(), validity, clock);
+        return withInitialVersion(name, calculator, Map.of(),
+                ApplicabilityConstraint.alwaysTrue(), validity, clock);
     }
 
     /**
@@ -204,8 +222,12 @@ record SimpleComponent(
 
     @Override
     public Money calculate(Parameters parameters, Interpretation targetInterpretation) {
-        LocalDateTime asOf = parameters.timestamp().orElseGet(LocalDateTime::now);
-        SimpleComponentVersion version = versionAt(asOf);
+        PricingContext context = PricingContext.from(parameters);
+        SimpleComponentVersion version = versionAt(context.timestamp());
+
+        if (!version.isApplicableFor(context)) {
+            return Money.pln(BigDecimal.ZERO);
+        }
 
         Parameters transformedParams = transformParameters(parameters, version.parameterMappings());
         Calculator adaptedCalculator = InterpretationAdapters.adapt(version.calculator(), targetInterpretation);
@@ -306,18 +328,20 @@ record CompositeComponent(
     }
 
     /**
-     * Factory: Create CompositeComponent with initial version.
+     * Factory: Create CompositeComponent with initial version and applicability constraint.
      */
     public static CompositeComponent withInitialVersion(
             String name,
             List<Component> children,
             Map<ComponentId, Map<String, ParameterValue>> dependencies,
+            ApplicabilityConstraint applicabilityConstraint,
             Validity validity,
             Clock clock
     ) {
         CompositeComponentVersion initialVersion = new CompositeComponentVersion(
                 children,
                 dependencies,
+                applicabilityConstraint,
                 validity,
                 LocalDateTime.now(clock)
         );
@@ -329,7 +353,21 @@ record CompositeComponent(
     }
 
     /**
-     * Factory: Create CompositeComponent with initial version (no dependencies).
+     * Factory: Create CompositeComponent with initial version (always applicable).
+     */
+    public static CompositeComponent withInitialVersion(
+            String name,
+            List<Component> children,
+            Map<ComponentId, Map<String, ParameterValue>> dependencies,
+            Validity validity,
+            Clock clock
+    ) {
+        return withInitialVersion(name, children, dependencies,
+                ApplicabilityConstraint.alwaysTrue(), validity, clock);
+    }
+
+    /**
+     * Factory: Create CompositeComponent with initial version (no dependencies, always applicable).
      */
     public static CompositeComponent withInitialVersion(
             String name,
@@ -337,7 +375,7 @@ record CompositeComponent(
             Validity validity,
             Clock clock
     ) {
-        return withInitialVersion(name, children, Map.of(), validity, clock);
+        return withInitialVersion(name, children, Map.of(), ApplicabilityConstraint.alwaysTrue(), validity, clock);
     }
 
     /**
@@ -445,8 +483,12 @@ record CompositeComponent(
 
     @Override
     public Money calculate(Parameters parameters, Interpretation targetInterpretation) {
-        LocalDateTime asOf = parameters.timestamp().orElseGet(LocalDateTime::now);
-        CompositeComponentVersion version = versionAt(asOf);
+        PricingContext context = PricingContext.from(parameters);
+        CompositeComponentVersion version = versionAt(context.timestamp());
+
+        if (!version.isApplicableFor(context)) {
+            return Money.pln(BigDecimal.ZERO);
+        }
 
         if (version.children().isEmpty()) {
             throw new IllegalStateException("Composite component %s has no children".formatted(name));
@@ -475,8 +517,12 @@ record CompositeComponent(
 
     @Override
     public ComponentBreakdown calculateBreakdown(Parameters parameters, Interpretation targetInterpretation) {
-        LocalDateTime asOf = parameters.timestamp().orElseGet(LocalDateTime::now);
-        CompositeComponentVersion version = versionAt(asOf);
+        PricingContext context = PricingContext.from(parameters);
+        CompositeComponentVersion version = versionAt(context.timestamp());
+
+        if (!version.isApplicableFor(context)) {
+            return new ComponentBreakdown(name, Money.pln(BigDecimal.ZERO), List.of());
+        }
 
         if (version.children().isEmpty()) {
             throw new IllegalStateException("Composite component %s has no children".formatted(name));
