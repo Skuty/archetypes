@@ -1,0 +1,8 @@
+package com.softwarearchetypes.scoring.ast;
+
+public enum Metric {
+    YEARLY_PURCHASE_AMOUNT,
+    QUARTERLY_COMPLAINT_COUNT,
+    LAST_PURCHASE_DAYS_AGO
+    // ...
+}
